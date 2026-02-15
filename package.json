@@ -1,0 +1,17 @@
+{
+  "name": "conarte",
+  "version": "1.0.0",
+  "description": "",
+  "main": "delfos.js",
+  "scripts": {
+    "start": "node scripts/delfos.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0"
+  }
+}
