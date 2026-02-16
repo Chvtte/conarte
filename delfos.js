@@ -55,6 +55,19 @@ client.initialize();
 // =====================================
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
+// Estado para controlar quando um usuário deve escolher um serviço
+const pendingSelection = new Map();
+
+// Lista de serviços (conforme LeadFlow)
+const services = [
+  'Abertura de empresa',
+  'Encerramento de empresa',
+  'Contabilidade para pequena ou média empresa',
+  'Suporte para MEI',
+  'Alvará de funcionamento',
+  'e-social'
+];
+
 // =====================================
 // FUNIL DE MENSAGENS (SOMENTE PRIVADO)
 // =====================================
@@ -74,6 +87,50 @@ client.on("message", async (msg) => {
       await chat.sendStateTyping();
       await delay(2000);
     };
+
+    // Se o chat está aguardando a seleção de serviço, trata a resposta aqui
+    if (pendingSelection.get(msg.from)) {
+      // normaliza texto para comparação
+      const norm = texto
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+      // tenta extrair número
+      const num = texto.replace(/[^0-9]/g, '').trim();
+      let idx = -1;
+      if (num) {
+        idx = parseInt(num, 10) - 1;
+      } else {
+        // tenta casar por palavras-chave com cada serviço
+        idx = services.findIndex((s) => {
+          const sNorm = s
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+          return norm.includes(sNorm.split(' ')[0]) || norm.includes(sNorm);
+        });
+      }
+
+      if (idx >= 0 && idx < services.length) {
+        const chosen = services[idx];
+        pendingSelection.delete(msg.from);
+        await typing();
+        await client.sendMessage(
+          msg.from,
+          `Você escolheu: ${chosen} \n\nEm breve um atendente entrará em contato. Se quiser outro serviço, digite 'menu'.`
+        );
+      } else {
+        await client.sendMessage(
+          msg.from,
+          `Desculpe, não entendi. Digite o número da opção (1-${services.length}) ou o nome do serviço.`
+        );
+      }
+      return;
+    }
 
     // =====================================
     // MENSAGEM INICIAL
