@@ -78,7 +78,36 @@ client.on("message", async (msg) => {
     // =====================================
     // MENSAGEM INICIAL
     // =====================================
-    if (/^(menu|oi|olá|ola|bom dia|boa tarde|boa noite)$/i.test(texto)) {
+    // lista ampliada de gatilhos (inclui variações e erros comuns)
+    const isTrigger = (t) => {
+      if (!t) return false;
+      // normaliza: remove acentos, pontuação e espaço duplicado, em lowercase
+      const norm = t
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+      const triggers = [
+        'menu','mneu','menú',
+        'oi','oie','oiee','oii','oiii','oiao',
+        'ola','olaa','olaaa','olá',
+        'bom dia','bomdia','bomdiaa','bomm dia','bomidia',
+        'boa tarde','boatarde',
+        'boa noite','boanoite','boanoit',
+        'start','/start','iniciar','inicio','comecar','comecar',
+        'ajuda','help','socorro','comando','comandos','comamd','comand',
+        'hello','hi','hey','hola','salve','fala','eae','e ai',
+        'tudo bem','tudobem','td bem','tdbem','blz'
+      ];
+
+      // verifica se algum gatilho aparece no texto normalizado
+      return triggers.some((s) => norm === s || norm.startsWith(s + ' ') || norm.endsWith(' ' + s) || norm.includes(' ' + s + ' ') || norm.includes(s));
+    };
+
+    if (isTrigger(texto)) {
 
       await typing();
 
