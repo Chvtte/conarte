@@ -4,12 +4,15 @@
 require('dotenv').config();
 const qrcode = require("qrcode-terminal");
 const { Client, MessageMedia, LocalAuth } = require("whatsapp-web.js");
+const path = require('path');
 
 // =====================================
 // CONFIGURAÇÃO DO CLIENTE
 // =====================================
+// Use a per-process session directory to avoid collisions with other running instances
+const sessionPath = process.env.WEBJS_SESSION_PATH || path.join(process.cwd(), `.wwebjs_auth_${process.pid}`);
 const client = new Client({
-  authStrategy: new LocalAuth(),
+  authStrategy: new LocalAuth({ dataPath: sessionPath }),
   puppeteer: {
     headless: true,
     executablePath: process.env.CHROME_PATH || undefined,
@@ -18,10 +21,13 @@ const client = new Client({
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--single-process",
+      "--no-zygote",
+      "--disable-extensions",
     ],
   },
 });
+
+console.log('Session data path:', sessionPath);
 
 // =====================================
 // QR CODE
@@ -48,7 +54,38 @@ client.on("disconnected", (reason) => {
 // =====================================
 // INICIALIZA
 // =====================================
-client.initialize();
+// Tratamento mais robusto da inicialização do client com tentativas
+const startClient = async (retries = 3, delayMs = 3000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`Iniciando client (tentativa ${attempt}/${retries})`);
+      await client.initialize();
+      console.log('Client inicializado com sucesso.');
+      return;
+    } catch (err) {
+      console.error(`Falha ao inicializar client (tentativa ${attempt}):`, err && err.message ? err.message : err);
+      if (attempt < retries) {
+        await delay(delayMs);
+      } else {
+        console.error('Não foi possível inicializar o client após várias tentativas.');
+        throw err;
+      }
+    }
+  }
+};
+
+// evitamos rejeições não capturadas travarem o processo
+process.on('unhandledRejection', (reason, p) => {
+  console.error('Unhandled Rejection at:', p, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception thrown:', err);
+});
+
+startClient().catch((e) => {
+  console.error('Erro crítico na inicialização do bot:', e);
+  // opcional: process.exit(1);
+});
 
 // =====================================
 // FUNÇÃO DE DELAY

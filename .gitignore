@@ -5,3 +5,4 @@ node_modules/
 .DS_Store
 .wwebjs_cache/
 LeadFlow.txt
+.wwebjs_auth_8372/
