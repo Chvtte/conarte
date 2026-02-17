@@ -73,19 +73,45 @@ const services = [
 // =====================================
 client.on("message", async (msg) => {
   try {
-    // ❌ IGNORA QUALQUER COISA QUE NÃO SEJA CONVERSA PRIVADA
-    if (!msg.from || msg.from.endsWith("@g.us")) return;
+    // ❌ VALIDA MENSAGEM BÁSICA
+    if (!msg || !msg.from || !msg.body) return;
+    
+    // Ignora status e broadcasts
+    if (msg.from === "status@broadcast" || msg.from.endsWith("@status")) return;
+    
+    // Ignora grupos
+    if (msg.from.endsWith("@g.us")) return;
 
-    const chat = await msg.getChat();
-    if (chat.isGroup) return; // blindagem extra
+    let chat;
+    try {
+      // Adiciona timeout e validação mais robusta
+      const chatPromise = msg.getChat();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout ao obter chat")), 5000)
+      );
+      chat = await Promise.race([chatPromise, timeoutPromise]);
+    } catch (err) {
+      // Ignora mensagens que não conseguem retornar chat válido
+      // Isso pode ser status, broadcast, ou erro de conexão temporário
+      return;
+    }
 
-    const texto = msg.body ? msg.body.trim().toLowerCase() : "";
+    // Validação dupla do objeto chat
+    if (!chat || typeof chat !== 'object' || chat.isGroup) return;
 
-    // Função de digitação
+    const texto = msg.body.trim().toLowerCase();
+
+    // Função de digitação (com proteção contra erros)
     const typing = async () => {
-      await delay(2000);
-      await chat.sendStateTyping();
-      await delay(2000);
+      try {
+        await delay(2000);
+        if (chat && typeof chat.sendStateTyping === 'function') {
+          await chat.sendStateTyping();
+        }
+        await delay(2000);
+      } catch (err) {
+        // Ignora silenciosamente erros na simulação de digitação
+      }
     };
 
     // Se o chat está aguardando a seleção de serviço, trata a resposta aqui
@@ -119,15 +145,23 @@ client.on("message", async (msg) => {
         const chosen = services[idx];
         pendingSelection.delete(msg.from);
         await typing();
-        await client.sendMessage(
-          msg.from,
-          `Você escolheu: ${chosen} \n\nEm breve um atendente entrará em contato. Se quiser outro serviço, digite 'menu'.`
-        );
+        try {
+          await client.sendMessage(
+            msg.from,
+            `Você escolheu: ${chosen} \n\nEm breve um atendente entrará em contato. Se quiser outro serviço, digite 'menu'.`
+          );
+        } catch (err) {
+          console.error("❌ Erro ao enviar confirmação de serviço:", err.message);
+        }
       } else {
-        await client.sendMessage(
-          msg.from,
-          `Desculpe, não entendi. Digite o número da opção (1-${services.length}) ou o nome do serviço.`
-        );
+        try {
+          await client.sendMessage(
+            msg.from,
+            `Desculpe, não entendi. Digite o número da opção (1-${services.length}) ou o nome do serviço.`
+          );
+        } catch (err) {
+          console.error("❌ Erro ao enviar mensagem de ajuda:", err.message);
+        }
       }
       return;
     }
@@ -175,22 +209,36 @@ client.on("message", async (msg) => {
       else if (hora >= 12 && hora < 18) saudacao = "Boa tarde";
       else saudacao = "Boa noite";
 
-      await client.sendMessage(
-        msg.from,
-        `${saudacao}! 👋\n\n` +
-        `Essa mensagem foi enviada automaticamente pelo robô 🤖\n\n` +
-        `Na versão PRO você vai além: desbloqueie tudo!.\n\n` +
-        '✍️ Envio de textos\n' +
-            '🎙️ Áudios\n' +
-            '🖼️ Imagens\n' +
-            '🎥 Vídeos\n' +
-            '📂 Arquivos\n\n' +
-            '💡 Simulação de "digitando..." e "gravando áudio"\n' +
-            '🚀 Envio de mensagens em massa\n' +
-            '📇 Captura automática de contatos\n' +
-            '💻 Aprenda como deixar o robô funcionando 24 hrs, com o PC desligado\n' +
-            '✅ E 3 Bônus exclusivos\n\n' +
-            '🔥 Adquira a versão PRO agora: https://pay.kiwify.com.br/FkTOhRZ?src=pro');
+      try {
+        await client.sendMessage(
+          msg.from,
+          `${saudacao}! 👋\n\n` +
+          `Essa mensagem foi enviada automaticamente pelo robô 🤖\n\n` +
+          `Na versão PRO você vai além: desbloqueie tudo!.\n\n` +
+          '✍️ Envio de textos\n' +
+              '🎙️ Áudios\n' +
+              '🖼️ Imagens\n' +
+              '🎥 Vídeos\n' +
+              '📂 Arquivos\n\n' +
+              '💡 Simulação de "digitando..." e "gravando áudio"\n' +
+              '🚀 Envio de mensagens em massa\n' +
+              '📇 Captura automática de contatos\n' +
+              '💻 Aprenda como deixar o robô funcionando 24 hrs, com o PC desligado\n' +
+              '✅ E 3 Bônus exclusivos\n\n' +
+              '🔥 Adquira a versão PRO agora: https://pay.kiwify.com.br/FkTOhRZ?src=pro');
+
+        // Exibe o menu de serviços
+        await delay(1000);
+        let menuText = `\n\nQual serviço você precisa? Digite o número:\n\n`;
+        services.forEach((service, idx) => {
+          menuText += `${idx + 1}. ${service}\n`;
+        });
+        
+        await client.sendMessage(msg.from, menuText);
+        pendingSelection.set(msg.from, true);
+      } catch (err) {
+        console.error("❌ Erro ao enviar menu inicial:", err.message);
+      }
     }
 
 

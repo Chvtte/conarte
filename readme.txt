@@ -6,3 +6,6 @@ testes serão nescessários
 0.1.0.0
 funcionalidade de menu interativo adicionado
 merge after 0.0.0.4 test runs
+0.1.0.1
+run da feature da 0.0.0.4 bem sucedida
+correção de bugs da funciopnalidade de menu(nescessita de mais correções)
