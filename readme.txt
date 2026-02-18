@@ -24,3 +24,9 @@
 - funcionalidade de consulta de banco de dados adicionada atraves do node query.js
 - funcionalidde de registro de leads adicionado a delfos.js
 - problemas de conectividade persitentes do client precisma ser solucionados
+0.2.1.0
+- Problemas de conexão com o client resolvido
+- criação do script database para inicializar a edição e consulta do banco de dados via terminal
+- Registro e consulta de status de leads através do chatbot.
+- interaçõ com o Lead leva a um loop que reinicia a intyeração após o serviço ser selecionado.
+- cada sessão inicializada gera um novo arquivo .wwebjs_auth_xxxx levando a um consumo crescente do disco

@@ -7,3 +7,5 @@ node_modules/
 LeadFlow.txt
 .wwebjs_auth_8372/
 conarte.db
+conarte.db-shm
+conarte.db-wal

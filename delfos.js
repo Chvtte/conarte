@@ -155,89 +155,142 @@ client.on("message", async (msg) => {
       }
     };
 
-    // ======= LEAD / CLIENTE CHECK (DB) =======
+    // ======= ALGORITMO DO CHATBOT =======
     try {
       const telefone = msg.from;
       const rawText = msg.body.trim();
 
-      // Busca cliente cadastrado pelo telefone
-      const cliente = db.prepare?.('SELECT * FROM clientes WHERE telefone = ?').get(telefone) || 
-                      (typeof db.prepare === 'function' && db.prepare('SELECT * FROM clientes WHERE telefone = ?').get(telefone));
+      // Estado conversacional do lead
+      const estado = conversationState[telefone];
 
-      if (!cliente) {
-        const estado = conversationState[telefone];
+      // ETAPA 1: Pedir CPF/CNPJ
+      if (!estado) {
+        conversationState[telefone] = { etapa: 'aguardando_cpf' };
+        await typing();
+        await client.sendMessage(telefone, '📋 Olá! Para começar, qual seu CPF ou CNPJ?');
+        return;
+      }
 
-        if (!estado) {
-          // Primeira mensagem do lead, inicia cadastro
-          conversationState[telefone] = { etapa: 'aguardando_cpf' };
+      // ETAPA 1b: Validar CPF/CNPJ
+      if (estado.etapa === 'aguardando_cpf') {
+        const cpfCnpj = rawText.replace(/[^0-9]/g, '');
+        if (cpfCnpj.length < 11) {
           await typing();
-          await client.sendMessage(telefone, 'Para agilizar, qual seu CPF ou CNPJ?');
-          return;
-        } else if (estado.etapa === 'aguardando_cpf') {
-          // Validar CPF/CNPJ (básico), salvar no estado e avançar
-          const cpfCnpj = rawText.replace(/[^0-9]/g, '');
-          if (cpfCnpj.length < 11) {
-            await typing();
-            await client.sendMessage(telefone, 'CPF/CNPJ inválido. Por favor envie apenas números do CPF ou CNPJ.');
-            return;
-          }
-          conversationState[telefone] = { etapa: 'aguardando_nome', cpfCnpj };
-          await typing();
-          await client.sendMessage(telefone, 'Obrigado! Agora, qual o nome da sua empresa ou seu nome completo?');
-          return;
-        } else if (estado.etapa === 'aguardando_nome') {
-          // Finalizar cadastro e limpar estado
-          const nome = rawText;
-          const { cpfCnpj } = estado;
-          try {
-            if (typeof db.prepare === 'function') {
-              db.prepare('INSERT INTO clientes (cpf_cnpj, nome_empresa, telefone) VALUES (?, ?, ?)').run(cpfCnpj, nome, telefone);
-            } else {
-              console.error('❌ db.prepare não é uma função');
-              await client.sendMessage(telefone, 'Erro: banco de dados não disponível.');
-              return;
-            }
-            delete conversationState[telefone];
-            await typing();
-            await client.sendMessage(telefone, 'Cadastro concluído! Como posso ajudar?');
-          } catch (err) {
-            console.error('❌ Erro ao inserir cliente:', err && err.message ? err.message : err);
-            await client.sendMessage(telefone, 'Desculpe, ocorreu um erro ao salvar seu cadastro. Tente novamente mais tarde.');
-          }
-          return;
-        } else {
-          // fallback: reinicia captura
-          conversationState[telefone] = { etapa: 'aguardando_cpf' };
-          await typing();
-          await client.sendMessage(telefone, 'Para agilizar, qual seu CPF ou CNPJ?');
+          await client.sendMessage(telefone, '❌ CPF/CNPJ inválido. Por favor envie apenas números (mínimo 11 dígitos).');
           return;
         }
-      } else {
-        // Cliente existente: verifica serviços ativos
+
+        // ETAPA 2: Buscar na tabela clientes
+        let cliente = null;
+        if (typeof db.prepare === 'function') {
+          try {
+            cliente = db.prepare('SELECT * FROM clientes WHERE cpf_cnpj = ?').get(cpfCnpj);
+          } catch (err) {
+            console.error('❌ Erro ao buscar cliente:', err && err.message ? err.message : err);
+          }
+        }
+
+        // ETAPA 3a: Novo lead - pedir nome
+        if (!cliente) {
+          conversationState[telefone] = { etapa: 'aguardando_nome_novo', cpfCnpj };
+          await typing();
+          await client.sendMessage(telefone, '✏️ Ótimo! Qual seu nome ou nome da empresa?');
+          return;
+        }
+
+        // ETAPA 3b: Lead existente - verificar serviços
+        conversationState[telefone] = { etapa: 'cliente_existente', cpfCnpj, nomeCliente: cliente.nome_empresa };
+        
         let servicosAtivos = [];
+        let servicosPendentes = [];
+        let servicosEmAndamento = [];
+        
         if (typeof db.prepare === 'function') {
           try {
             servicosAtivos = db.prepare(`
-            SELECT * FROM servicos 
-            WHERE cpf_cnpj_cliente = ? AND status IN ('pendente', 'em_andamento', 'aguardando_pagamento')
-        `).all(cliente.cpf_cnpj);
+              SELECT * FROM servicos 
+              WHERE cpf_cnpj_cliente = ? AND status IN ('pendente', 'em_andamento', 'aguardando_pagamento')
+            `).all(cpfCnpj);
+
+            servicosPendentes = servicosAtivos.filter(s => s.status === 'aguardando_pagamento');
+            servicosEmAndamento = servicosAtivos.filter(s => s.status === 'em_andamento');
           } catch (err) {
             console.error('❌ Erro ao buscar serviços:', err && err.message ? err.message : err);
           }
         }
 
-        if (servicosAtivos && servicosAtivos.length > 0) {
-          let resposta = `Olá ${cliente.nome_empresa || ''}! Identifiquei os seguintes serviços em aberto:\n`;
-          servicosAtivos.forEach((s, i) => {
-            resposta += `${i + 1}. ${s.tipo || 'Serviço'} — status: ${s.status}\n`;
+        // ETAPA 4ba: Lembrar de pagamento pendente
+        let msg_pendencia = '';
+        if (servicosPendentes.length > 0) {
+          msg_pendencia = `\n💳 **PAGAMENTO PENDENTE:**\n`;
+          servicosPendentes.forEach((s) => {
+            msg_pendencia += `• ${s.tipo} - R$ ${s.valor || '---'}\n`;
           });
-          resposta += '\nComo posso ajudar? 1- Acompanhar serviço, 2- Pagar pendência, 3- Falar com atendente';
-          await typing();
-          await client.sendMessage(msg.from, resposta);
-          return;
         }
-        // se não há serviços ativos, continua o fluxo normal (menu etc.)
+
+        // ETAPA 4bb: Oferecer agendamento se em andamento
+        let msg_agendamento = '';
+        if (servicosEmAndamento.length > 0) {
+          msg_agendamento += `\n⏳ Você tem ${servicosEmAndamento.length} serviço(s) em andamento. Quer um agendamento para saber como está? 📅`;
+        }
+
+        // ETAPA 5: Mensagem de boas-vindas + menu
+        await typing();
+        await client.sendMessage(
+          telefone,
+          `👋 Bem vindo de volta *${cliente.nome_empresa}*!${msg_pendencia}${msg_agendamento}\n\nQual serviço você precisa?`
+        );
+
+        // Mostrar menu de serviços
+        await delay(500);
+        let menuText = '\n📋 Digite o número:\n\n';
+        services.forEach((service, idx) => {
+          menuText += `${idx + 1}. ${service}\n`;
+        });
+        
+        await client.sendMessage(telefone, menuText);
+        pendingSelection.set(telefone, true);
+        delete conversationState[telefone];
+        return;
       }
+
+      // ETAPA 4a: Novo lead - registro completo
+      if (estado.etapa === 'aguardando_nome_novo') {
+        const nome = rawText;
+        const cpfCnpj = estado.cpfCnpj;
+
+        try {
+          if (typeof db.prepare === 'function') {
+            db.prepare('INSERT INTO clientes (cpf_cnpj, nome_empresa, telefone) VALUES (?, ?, ?)')
+              .run(cpfCnpj, nome, telefone);
+          } else {
+            console.error('❌ db.prepare não é uma função');
+            await client.sendMessage(telefone, '❌ Erro: banco de dados não disponível.');
+            delete conversationState[telefone];
+            return;
+          }
+
+          await typing();
+          await client.sendMessage(telefone, `✅ Cadastro concluído com sucesso!\n\n👋 Bem vindo *${nome}*! 🎉`);
+          
+          // Apresentar menu de serviços
+          await delay(500);
+          let menuText = '\n📋 Qual serviço você precisa? Digite o número:\n\n';
+          services.forEach((service, idx) => {
+            menuText += `${idx + 1}. ${service}\n`;
+          });
+          
+          await client.sendMessage(telefone, menuText);
+          pendingSelection.set(telefone, true);
+          delete conversationState[telefone];
+        } catch (err) {
+          console.error('❌ Erro ao inserir cliente:', err && err.message ? err.message : err);
+          await client.sendMessage(telefone, '❌ Erro ao salvar cadastro. Tente novamente.');
+          delete conversationState[telefone];
+        }
+        return;
+      }
+
     } catch (err) {
       console.error('❌ Erro ao processar lead/cliente:', err && err.message ? err.message : err);
     }
