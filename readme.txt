@@ -18,7 +18,9 @@
 - Ajustes no Puppeteer: remoção de `--single-process`, adição de flags mais estáveis; e `LocalAuth` com `dataPath` por processo para evitar conflito de sessões.
 - Log do caminho da sessão adicionado e mensagens de erro mais informativas para facilitar debugging.
 - coinflip branch sucefully merged
-0.1.2.1
+0.2.0.0
 - lista de serviços atualizada
 - biblioteca better-sqlite3 adicionada ao projeto
-- funcionalidde de registro de leadsadicionado a delfos.js
+- funcionalidade de consulta de banco de dados adicionada atraves do node query.js
+- funcionalidde de registro de leads adicionado a delfos.js
+- problemas de conectividade persitentes do client precisma ser solucionados
